@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+@theme {
+	--font-heading: 'Poppins', sans-serif;
+	--font-body: 'Open Sans', sans-serif;
+	--color-purple: #b987fa;
+	--color-teal: #46c4b8;
+	--color-cream: #f9faf5;
+	--color-coral: #f87171;
+	--color-yellow: #fbbf24;
+}
