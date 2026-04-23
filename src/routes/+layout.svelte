@@ -60,6 +60,12 @@
 			>
 				Leaderboard
 			</a>
+			<a
+				href="/lobby"
+				class="font-heading font-semibold text-black transition-colors hover:text-teal {page.url.pathname === '/lobby' || page.url.pathname.startsWith('/room/') ? 'text-teal underline underline-offset-4' : ''}"
+			>
+				⚡ Multiplayer
+			</a>
 
 			{#if auth.isLoggedIn}
 				<a
@@ -116,6 +122,7 @@
 				<a href="/" onclick={() => (mobileOpen = false)} class="font-heading font-semibold text-black">Home</a>
 				<button onclick={scrollToBlog} class="text-left font-heading font-semibold text-black">Blog</button>
 				<a href="/leaderboard" onclick={() => (mobileOpen = false)} class="font-heading font-semibold text-black">Leaderboard</a>
+				<a href="/lobby" onclick={() => (mobileOpen = false)} class="font-heading font-semibold text-black">⚡ Multiplayer</a>
 
 				{#if auth.isLoggedIn}
 					<a
