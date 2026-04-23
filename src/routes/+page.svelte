@@ -1,228 +1,240 @@
 <script lang="ts">
-	import { rounds, type FoodCard, type Round } from '$lib/game-data';
+	import { auth } from '$lib/auth.svelte';
+	import { blogPosts } from '$lib/blog-data';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 
-	type GameState = 'start' | 'playing' | 'feedback' | 'results';
-
-	let state = $state<GameState>('start');
-	let currentIndex = $state(0);
-	let score = $state(0);
-	let selectedSide = $state<'a' | 'b' | null>(null);
-	let wasCorrect = $state(false);
-	let shuffledRounds = $state<Round[]>([]);
-	const totalRounds = 5;
-
-	function startGame() {
-		const shuffled = [...rounds].sort(() => Math.random() - 0.5);
-		shuffledRounds = shuffled.slice(0, totalRounds);
-		currentIndex = 0;
-		score = 0;
-		selectedSide = null;
-		state = 'playing';
-	}
-
-	function pickCard(side: 'a' | 'b') {
-		if (state !== 'playing') return;
-		const round = shuffledRounds[currentIndex];
-		const picked = side === 'a' ? round.optionA : round.optionB;
-		selectedSide = side;
-		wasCorrect = picked.isHealthier === true;
-		if (wasCorrect) score++;
-		state = 'feedback';
-	}
-
-	function nextRound() {
-		selectedSide = null;
-		if (currentIndex + 1 < totalRounds) {
-			currentIndex++;
-			state = 'playing';
+	function handlePlay() {
+		if (auth.isLoggedIn) {
+			goto('/game');
 		} else {
-			state = 'results';
+			goto('/auth');
 		}
 	}
 
-	let currentRound = $derived(shuffledRounds[currentIndex]);
-	let progressPercent = $derived(((currentIndex + (state === 'feedback' ? 1 : 0)) / totalRounds) * 100);
-
-	function getResultMessage(s: number, total: number): string {
-		const pct = s / total;
-		if (pct === 1) return 'Perfect score! You really know your nutrition!';
-		if (pct >= 0.8) return 'Great job! You have solid nutrition knowledge!';
-		if (pct >= 0.6) return 'Not bad! Keep learning about healthy choices!';
-		return "There's room to grow — every choice is a chance to learn!";
-	}
+	// highlight Blog nav when section is visible
+	let blogSection: HTMLElement;
+	onMount(() => {
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				// dispatch custom event the layout can listen for if needed
+				if (entry.isIntersecting) {
+					history.replaceState(null, '', '/#blog');
+				}
+			},
+			{ threshold: 0.3 }
+		);
+		if (blogSection) observer.observe(blogSection);
+		return () => observer.disconnect();
+	});
 </script>
 
 <svelte:head>
-	<title>HealthyPick — Choose the Healthier Option!</title>
+	<title>HealthyPick — Make Smarter Food Choices</title>
 </svelte:head>
 
-<div class="min-h-screen bg-cream font-body">
-	<!-- decorative shapes -->
-	<div class="pointer-events-none fixed -left-16 -top-16 h-48 w-48 rotate-12 rounded-lg border-[5px] border-black bg-purple opacity-40"></div>
-	<div class="pointer-events-none fixed -bottom-12 -right-12 h-40 w-40 -rotate-12 rounded-lg border-[5px] border-black bg-teal opacity-40"></div>
-	<div class="pointer-events-none fixed right-24 top-20 h-20 w-20 rotate-45 border-[5px] border-black bg-yellow opacity-30"></div>
+<main class="overflow-x-hidden bg-[#f9faf5] font-body">
+	<!-- ─── HERO ─────────────────────────────────────────── -->
+	<section class="relative min-h-[88vh] px-4 pb-24 pt-20">
+		<!-- decorative blobs -->
+		<div class="pointer-events-none absolute -left-20 top-10 h-64 w-64 -rotate-12 rounded-3xl border-[5px] border-black bg-teal opacity-30"></div>
+		<div class="pointer-events-none absolute -right-16 top-24 h-48 w-48 rotate-12 rounded-3xl border-[5px] border-black bg-purple opacity-30"></div>
+		<div class="pointer-events-none absolute bottom-16 left-1/3 h-32 w-32 rotate-45 border-[5px] border-black bg-yellow opacity-25"></div>
 
-	{#if state === 'start'}
-		<!-- START SCREEN -->
-		<div class="flex min-h-screen flex-col items-center justify-center px-4">
-			<div class="relative max-w-lg text-center">
-				<!-- accent card behind -->
-				<div class="absolute -left-4 -top-4 h-full w-full rounded-2xl border-[5px] border-black bg-teal"></div>
-				<div class="relative rounded-2xl border-[5px] border-black bg-white p-10">
-					<p class="mb-2 text-6xl">🥦 vs 🍩</p>
-					<h1 class="font-heading text-4xl font-extrabold text-black sm:text-5xl">HealthyPick</h1>
-					<p class="mt-3 font-heading text-lg font-semibold text-teal">Can you spot the healthier choice?</p>
-					<p class="mt-4 text-gray-600">
-						You'll see two food cards each round. Pick the healthier one!
-						<br />
-						<strong>{totalRounds} rounds</strong> — let's see how well you know your nutrition.
+		<div class="relative mx-auto max-w-5xl">
+			<div class="grid items-center gap-12 lg:grid-cols-2">
+				<!-- text side -->
+				<div>
+					<span class="inline-block rounded-full border-[3px] border-black bg-yellow px-4 py-1 font-heading text-sm font-bold">
+						🌱 Health Campaign 2026
+					</span>
+					<h1 class="mt-4 font-heading text-5xl font-extrabold leading-tight text-black sm:text-6xl">
+						Build the<br />
+						<span class="relative inline-block">
+							<span class="relative z-10">Healthiest</span>
+							<span class="absolute bottom-1 left-0 z-0 h-4 w-full -skew-x-3 bg-teal"></span>
+						</span>
+						<br />Dish.
+					</h1>
+					<p class="mt-6 max-w-md text-lg text-gray-600">
+						Each round presents real ingredients. You pick the combo. The healthier your choices,
+						the higher your score — and your spot on the leaderboard.
 					</p>
-					<button
-						onclick={startGame}
-						class="mt-8 rounded-xl border-[4px] border-black bg-purple px-10 py-3 font-heading text-lg font-bold text-white shadow-[4px_4px_0px_0px_#000] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none"
-					>
-						Start Game
-					</button>
+					<div class="mt-8 flex flex-wrap gap-4">
+						<button
+							onclick={handlePlay}
+							class="rounded-xl border-[4px] border-black bg-purple px-8 py-3 font-heading text-lg font-bold text-white shadow-[5px_5px_0_0_#000] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[3px_3px_0_0_#000] active:translate-x-[5px] active:translate-y-[5px] active:shadow-none"
+						>
+							{auth.isLoggedIn ? '▶ Continue Playing' : '▶ Play Now — It\'s Free'}
+						</button>
+						<a
+							href="#how-it-works"
+							onclick={(e) => { e.preventDefault(); document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' }); }}
+							class="rounded-xl border-[4px] border-black bg-white px-8 py-3 font-heading text-lg font-bold text-black shadow-[5px_5px_0_0_#000] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[3px_3px_0_0_#000]"
+						>
+							Learn More
+						</a>
+					</div>
+					{#if auth.isLoggedIn}
+						<p class="mt-4 font-heading text-sm font-semibold text-teal">
+							Welcome back, <span class="capitalize">{auth.user?.name}</span>! 👋
+						</p>
+					{/if}
 				</div>
-			</div>
-		</div>
 
-	{:else if state === 'playing' || state === 'feedback'}
-		<!-- GAME SCREEN -->
-		<div class="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-8">
-			<!-- header -->
-			<div class="mb-6 flex items-center justify-between">
-				<h2 class="font-heading text-2xl font-bold">
-					Round {currentIndex + 1}<span class="text-gray-400">/{totalRounds}</span>
-				</h2>
-				<div class="flex items-center gap-3">
-					<span class="font-heading text-lg font-semibold">Score: {score}</span>
-					<div class="flex gap-1">
-						{#each Array(totalRounds) as _, i}
-							<div
-								class="h-3 w-3 rounded-full border-2 border-black {i < score ? 'bg-teal' : i < currentIndex + (state === 'feedback' ? 1 : 0) ? 'bg-coral' : 'bg-gray-200'}"
-							></div>
-						{/each}
+				<!-- visual cards side -->
+				<!-- Dish builder preview -->
+				<div class="flex flex-col gap-3">
+					<div class="relative">
+						<div class="absolute -bottom-2 -right-2 h-full w-full rounded-2xl border-[4px] border-black bg-teal opacity-70"></div>
+						<div class="relative rounded-2xl border-[4px] border-black bg-white p-4">
+							<p class="font-heading text-xs font-bold text-gray-400 mb-2">🥗 Build the Healthiest Salad — pick 5</p>
+							<div class="grid grid-cols-3 gap-2">
+								{#each [
+									{ e: '🥬', n: 'Mixed Greens', s: 9, sel: true },
+									{ e: '🥑', n: 'Avocado', s: 8, sel: true },
+									{ e: '🍗', n: 'Grilled Chicken', s: 9, sel: true },
+									{ e: '🍅', n: 'Cherry Tomatoes', s: 8, sel: false },
+									{ e: '🥓', n: 'Bacon Bits', s: 2, sel: false },
+									{ e: '🫙', n: 'Ranch Dressing', s: 2, sel: false },
+								] as ing}
+									<div class="rounded-lg border-[2px] border-black p-2 text-center text-xs {ing.sel ? 'bg-teal/15 ring-2 ring-teal' : 'bg-gray-50 opacity-60'}">
+										<span class="text-2xl block">{ing.e}</span>
+										<p class="mt-0.5 font-heading font-bold leading-tight text-[10px]">{ing.n}</p>
+										{#if ing.sel}
+											<span class="text-teal text-[10px] font-bold">{ing.s}/10 ✓</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+							<div class="mt-2 text-center font-heading text-xs font-bold text-teal">3/5 selected…</div>
+						</div>
 					</div>
 				</div>
 			</div>
+		</div>
+	</section>
 
-			<!-- progress bar -->
-			<div class="mb-8 h-3 overflow-hidden rounded-full border-[3px] border-black bg-gray-200">
-				<div
-					class="h-full rounded-full bg-teal transition-all duration-500"
-					style="width: {progressPercent}%"
-				></div>
+	<!-- ─── HOW IT WORKS ─────────────────────────────────── -->
+	<section id="how-it-works" class="bg-white px-4 py-20">
+		<div class="mx-auto max-w-5xl">
+			<div class="mb-12 text-center">
+				<h2 class="font-heading text-4xl font-extrabold text-black">How It Works</h2>
+				<p class="mt-3 text-gray-500">Three simple steps to better nutrition choices</p>
 			</div>
 
-			<!-- prompt -->
-			<p class="mb-6 text-center font-heading text-xl font-semibold text-gray-700">
-				{#if state === 'playing'}
-					Which one is healthier? Tap to choose!
-				{:else}
-					{wasCorrect ? '✅ Correct!' : '❌ Not quite!'}
-				{/if}
+			<div class="grid gap-8 sm:grid-cols-3">
+				{#each [
+					{ step: '01', title: 'Sign Up Free', desc: 'Create your account in seconds — no credit card needed.', emoji: '✍️', color: 'bg-purple' },
+					{ step: '02', title: 'Build Your Dish', desc: 'Each round gives you ingredients. Pick the healthiest combo to score points!', emoji: '🍱', color: 'bg-teal' },
+					{ step: '03', title: 'Climb the Board', desc: 'Scores are saved to the leaderboard. Can you reach the top 10?', emoji: '🏆', color: 'bg-yellow' }
+				] as s}
+					<div class="relative">
+						<div class="absolute -bottom-2 -right-2 h-full w-full rounded-2xl border-[4px] border-black {s.color} opacity-70"></div>
+						<div class="relative rounded-2xl border-[4px] border-black bg-white p-6">
+							<span class="font-heading text-5xl font-black text-gray-400">{s.step}</span>
+							<p class="mt-2 text-4xl">{s.emoji}</p>
+							<h3 class="mt-3 font-heading text-xl font-bold">{s.title}</h3>
+							<p class="mt-2 text-sm text-gray-600">{s.desc}</p>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	</section>
+
+	<!-- ─── STATS BAND ─────────────────────────────────────── -->
+	<section class="border-y-[4px] border-black bg-teal px-4 py-10">
+		<div class="mx-auto grid max-w-4xl gap-8 text-center sm:grid-cols-3">
+			{#each [
+				{ value: '10+', label: 'Food Comparisons' },
+				{ value: '5', label: 'Rounds Per Game' },
+				{ value: '100%', label: 'Free to Play' }
+			] as stat}
+				<div>
+					<p class="font-heading text-5xl font-extrabold text-white">{stat.value}</p>
+					<p class="mt-1 font-heading font-semibold text-white/80">{stat.label}</p>
+				</div>
+			{/each}
+		</div>
+	</section>
+
+	<!-- ─── BLOG SECTION ──────────────────────────────────── -->
+	<section id="blog" bind:this={blogSection} class="px-4 py-20">
+		<div class="mx-auto max-w-6xl">
+			<div class="mb-12 flex flex-wrap items-end justify-between gap-4">
+				<div>
+					<h2 class="font-heading text-4xl font-extrabold text-black">Health Blog</h2>
+					<p class="mt-2 text-gray-500">Tips, science, and stories to fuel your healthy journey</p>
+				</div>
+			</div>
+
+			<div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+				{#each blogPosts as post}
+					<a
+						href="/blog/{post.slug}"
+						class="group relative block no-underline transition-transform hover:-translate-y-1"
+					>
+						<div class="absolute -bottom-2 -right-2 h-full w-full rounded-2xl border-[4px] border-black {post.accentColor} opacity-70"></div>
+						<article class="relative flex h-full flex-col rounded-2xl border-[4px] border-black bg-white p-6 transition-shadow group-hover:shadow-lg">
+							<!-- cover -->
+							<div class="flex h-24 items-center justify-center rounded-xl border-[3px] border-black bg-[#f9faf5] text-5xl">
+								{post.coverEmoji}
+							</div>
+							<!-- category + date -->
+							<div class="mt-4 flex items-center gap-2">
+								<span class="rounded-full border-[2px] border-black bg-yellow px-2 py-0.5 font-heading text-xs font-bold">
+									{post.category}
+								</span>
+								<span class="text-xs text-gray-400">{post.readTime}</span>
+							</div>
+							<!-- title -->
+							<h3 class="mt-3 font-heading text-lg font-bold leading-snug text-black">
+								{post.title}
+							</h3>
+							<!-- excerpt -->
+							<p class="mt-2 flex-1 text-sm text-gray-600 line-clamp-3">
+								{post.excerpt}
+							</p>
+							<!-- read more -->
+							<p class="mt-4 font-heading text-sm font-bold text-black underline underline-offset-2">
+								Read article →
+							</p>
+						</article>
+					</a>
+				{/each}
+			</div>
+		</div>
+	</section>
+
+	<!-- ─── CTA BAND ──────────────────────────────────────── -->
+	<section class="border-t-[4px] border-black bg-purple px-4 py-20">
+		<div class="mx-auto max-w-2xl text-center">
+			<p class="text-5xl">🏆</p>
+			<h2 class="mt-4 font-heading text-4xl font-extrabold text-white">
+				Ready to test your nutrition IQ?
+			</h2>
+			<p class="mt-4 text-lg text-white/80">
+				Join the campaign. Pick smarter. Eat better. It starts with one game.
 			</p>
-
-			<!-- cards -->
-			{#if currentRound}
-				<div class="grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2">
-					{@render foodCard(currentRound.optionA, 'a')}
-					{@render foodCard(currentRound.optionB, 'b')}
-				</div>
-			{/if}
-
-			<!-- feedback explanation -->
-			{#if state === 'feedback' && currentRound}
-				<div class="mt-6 rounded-xl border-[4px] border-black bg-white p-5 shadow-[4px_4px_0px_0px_#000]">
-					<p class="font-heading text-sm font-semibold text-gray-500">💡 Did you know?</p>
-					<p class="mt-1 text-gray-700">{currentRound.explanation}</p>
-					<button
-						onclick={nextRound}
-						class="mt-4 rounded-lg border-[3px] border-black bg-purple px-8 py-2 font-heading font-bold text-white shadow-[3px_3px_0px_0px_#000] transition-all hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000]"
-					>
-						{currentIndex + 1 < totalRounds ? 'Next Round →' : 'See Results →'}
-					</button>
-				</div>
-			{/if}
+			<button
+				onclick={handlePlay}
+				class="mt-8 rounded-xl border-[4px] border-black bg-white px-10 py-3 font-heading text-lg font-bold text-black shadow-[5px_5px_0_0_#000] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[3px_3px_0_0_#000]"
+			>
+				{auth.isLoggedIn ? '▶ Play Now' : '▶ Sign Up & Play Free'}
+			</button>
 		</div>
+	</section>
 
-	{:else if state === 'results'}
-		<!-- RESULTS SCREEN -->
-		<div class="flex min-h-screen flex-col items-center justify-center px-4">
-			<div class="relative max-w-md text-center">
-				<div class="absolute -left-4 -top-4 h-full w-full rounded-2xl border-[5px] border-black bg-purple"></div>
-				<div class="relative rounded-2xl border-[5px] border-black bg-white p-10">
-					<p class="text-6xl">{score === totalRounds ? '🏆' : score >= 3 ? '🌟' : '💪'}</p>
-					<h2 class="mt-4 font-heading text-3xl font-extrabold">
-						{score} / {totalRounds}
-					</h2>
-					<p class="mt-3 text-lg text-gray-600">{getResultMessage(score, totalRounds)}</p>
-
-					<!-- score dots -->
-					<div class="mt-5 flex justify-center gap-2">
-						{#each Array(totalRounds) as _, i}
-							<div
-								class="h-5 w-5 rounded-full border-[3px] border-black {i < score ? 'bg-teal' : 'bg-coral'}"
-							></div>
-						{/each}
-					</div>
-
-					<button
-						onclick={startGame}
-						class="mt-8 rounded-xl border-[4px] border-black bg-teal px-10 py-3 font-heading text-lg font-bold text-white shadow-[4px_4px_0px_0px_#000] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none"
-					>
-						Play Again
-					</button>
-				</div>
+	<!-- ─── FOOTER ────────────────────────────────────────── -->
+	<footer class="border-t-[4px] border-black bg-white px-4 py-8">
+		<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+			<div class="flex items-center gap-2">
+				<span class="text-xl">🥦</span>
+				<span class="font-heading font-extrabold text-black">HealthyPick</span>
+				<span class="text-sm text-gray-400">— Health Campaign 2026</span>
 			</div>
+			<p class="text-sm text-gray-400">Made with love for better food choices.</p>
 		</div>
-	{/if}
-</div>
-
-{#snippet foodCard(card: FoodCard, side: 'a' | 'b')}
-	{@const isSelected = selectedSide === side}
-	{@const isCorrectCard = card.isHealthier === true}
-	{@const showResult = state === 'feedback'}
-	{@const accentColor = side === 'a' ? 'bg-teal' : 'bg-purple'}
-
-	<button
-		onclick={() => pickCard(side)}
-		disabled={state !== 'playing'}
-		class="group relative text-left transition-transform {state === 'playing' ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'}"
-	>
-		<!-- offset accent behind card -->
-		<div class="absolute -bottom-2 -right-2 h-full w-full rounded-2xl border-[4px] border-black {accentColor}"></div>
-
-		<div
-			class="relative flex h-full flex-col rounded-2xl border-[4px] border-black bg-white p-6 transition-shadow
-				{showResult && isCorrectCard ? 'ring-4 ring-teal' : ''}
-				{showResult && isSelected && !isCorrectCard ? 'ring-4 ring-coral' : ''}
-				{!showResult ? 'group-hover:shadow-lg' : ''}"
-		>
-			<!-- emoji -->
-			<p class="text-center text-7xl sm:text-8xl">{card.emoji}</p>
-
-			<!-- name -->
-			<h3 class="mt-4 text-center font-heading text-xl font-bold text-black">{card.name}</h3>
-
-			<!-- description -->
-			<p class="mt-2 flex-1 text-center text-sm text-gray-600">{card.description}</p>
-
-			<!-- calorie badge -->
-			<div class="mt-4 flex justify-center">
-				<span class="rounded-full border-[3px] border-black bg-yellow px-4 py-1 font-heading text-sm font-bold">
-					{card.calories} cal
-				</span>
-			</div>
-
-			<!-- result indicator -->
-			{#if showResult}
-				<div class="mt-3 text-center font-heading text-sm font-bold {isCorrectCard ? 'text-teal' : 'text-coral'}">
-					{isCorrectCard ? '✅ Healthier choice!' : ''}
-					{isSelected && !isCorrectCard ? '❌ Less healthy' : ''}
-				</div>
-			{/if}
-		</div>
-	</button>
-{/snippet}
+	</footer>
+</main>
