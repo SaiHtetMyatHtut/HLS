@@ -337,20 +337,29 @@ async function endRound(room: Room) {
 	// Sync round_end state — Realtime will push to clients
 	await syncToSupabase(room);
 
-	// Advance to next round after 8 seconds
-	setTimeout(async () => {
-		room.currentRound++;
-		if (room.currentRound >= room.totalRounds) {
-			room.phase = 'finished';
-		} else {
-			room.phase = 'playing';
-			room.roundStartTime = Date.now();
-			room.submissions.clear();
-			room.lastRoundResults = null;
-			room.lastOptimalPicks = null;
-			for (const p of room.players.values()) p.submittedThisRound = false;
-			startRoundTimer(room);
-		}
-		await syncToSupabase(room);
-	}, 8000);
+}
+
+export async function advanceRound(
+	code: string,
+	playerId: string
+): Promise<null | { error: string }> {
+	const room = rooms.get(code);
+	if (!room) return { error: 'Room not found.' };
+	if (room.hostId !== playerId) return { error: 'Only the host can advance rounds.' };
+	if (room.phase !== 'round_end') return { error: 'Round has not ended yet.' };
+
+	room.currentRound++;
+	if (room.currentRound >= room.totalRounds) {
+		room.phase = 'finished';
+	} else {
+		room.phase = 'playing';
+		room.roundStartTime = Date.now();
+		room.submissions.clear();
+		room.lastRoundResults = null;
+		room.lastOptimalPicks = null;
+		for (const p of room.players.values()) p.submittedThisRound = false;
+		startRoundTimer(room);
+	}
+	await syncToSupabase(room);
+	return null;
 }

@@ -282,8 +282,19 @@ class MultiplayerStore {
 				this.nextRoundIn--;
 			} else {
 				this.stopNextRoundCountdown();
+				// Host drives round advancement so it works on serverless deployments
+				if (this.isHost) this.advanceRound();
 			}
 		}, 1000);
+	}
+
+	private async advanceRound(): Promise<void> {
+		if (!this.roomCode || !this.playerId) return;
+		await fetch(`/api/room/${this.roomCode}/advance`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ playerId: this.playerId })
+		});
 	}
 
 	private stopNextRoundCountdown() {
