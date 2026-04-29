@@ -1,8 +1,41 @@
 import { browser } from '$app/environment';
-import type { PublicRoom, PublicPlayer, PlayerRoundResult, PickReveal, ServerEvent } from '$lib/room-types';
+import { supabase } from '$lib/supabase';
+import type {
+	PublicRoom,
+	PublicPlayer,
+	SerializedChallenge,
+	PlayerRoundResult,
+	PickReveal
+} from '$lib/room-types';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const SESSION_CODE = 'mp_roomCode';
 const SESSION_PID = 'mp_playerId';
+
+// ─── DB row shapes ────────────────────────────────────────────────────────
+
+interface RoomRow {
+	code: string;
+	host_player_id: string;
+	phase: string;
+	current_round: number;
+	total_rounds: number;
+	serialized_challenges: SerializedChallenge[];
+	round_start_time: number | null;
+	round_duration: number;
+	round_results: { playerResults: PlayerRoundResult[]; optimalPicks: PickReveal[] } | null;
+}
+
+interface PlayerRow {
+	id: string;
+	room_code: string;
+	name: string;
+	scores: number[];
+	speed_bonuses: number[];
+	submitted_this_round: boolean;
+}
+
+// ─── Store ────────────────────────────────────────────────────────────────
 
 class MultiplayerStore {
 	roomCode = $state<string | null>(null);
@@ -13,17 +46,20 @@ class MultiplayerStore {
 
 	roundResults = $state<PlayerRoundResult[] | null>(null);
 	optimalPicks = $state<PickReveal[] | null>(null);
-
-	// Countdown to next round (client-side display only)
 	nextRoundIn = $state<number | null>(null);
 
 	connected = $state(false);
 	error = $state<string | null>(null);
 
-	private es: EventSource | null = null;
+	private channel: RealtimeChannel | null = null;
+	private roomRow: RoomRow | null = null;
+	private playersMap = new Map<string, PlayerRow>();
+	private prevPhase: string | null = null;
+
+	private timerInterval: ReturnType<typeof setInterval> | null = null;
 	private nextRoundTimer: ReturnType<typeof setInterval> | null = null;
 
-	// ─── init ──────────────────────────────────────────────────────────────
+	// ─── init ────────────────────────────────────────────────────────────
 
 	init(roomCode: string, playerId: string) {
 		this.roomCode = roomCode;
@@ -53,77 +89,188 @@ class MultiplayerStore {
 			sessionStorage.removeItem(SESSION_CODE);
 			sessionStorage.removeItem(SESSION_PID);
 		}
-		this.es?.close();
-		this.es = null;
+		this.channel?.unsubscribe();
+		this.channel = null;
+		this.stopLocalTimer();
+		this.stopNextRoundCountdown();
 		this.roomCode = null;
 		this.playerId = null;
 		this.room = null;
+		this.roomRow = null;
+		this.playersMap.clear();
+		this.prevPhase = null;
 		this.connected = false;
 		this.error = null;
+		this.roundResults = null;
+		this.optimalPicks = null;
 	}
 
-	// ─── connection ────────────────────────────────────────────────────────
+	// ─── Realtime connection ─────────────────────────────────────────────
 
-	private connect() {
+	private async connect() {
 		if (!browser || !this.roomCode) return;
-		this.es?.close();
 
-		this.es = new EventSource(`/api/room/${this.roomCode}/stream`);
+		// Unsubscribe from any previous channel
+		this.channel?.unsubscribe();
 
-		this.es.onopen = () => {
-			this.connected = true;
-			this.error = null;
-		};
+		// 1. Fetch current state from DB
+		await this.fetchInitialState();
 
-		this.es.onerror = () => {
-			this.connected = false;
-			// Attempt reconnect after 2s
-			setTimeout(() => {
-				if (this.roomCode) this.connect();
-			}, 2000);
-		};
+		// 2. Subscribe to Realtime changes
+		this.channel = supabase
+			.channel(`room:${this.roomCode}`)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'rooms',
+					filter: `code=eq.${this.roomCode}`
+				},
+				(payload) => {
+					if (payload.new && Object.keys(payload.new).length > 0) {
+						this.handleRoomChange(payload.new as RoomRow);
+					}
+				}
+			)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'room_players',
+					filter: `room_code=eq.${this.roomCode}`
+				},
+				(payload) => {
+					this.handlePlayerChange(payload);
+				}
+			)
+			.subscribe((status) => {
+				this.connected = status === 'SUBSCRIBED';
+				if (status === 'CHANNEL_ERROR') {
+					this.error = 'Connection error — retrying…';
+					setTimeout(() => this.connect(), 3000);
+				}
+			});
+	}
 
-		this.es.onmessage = (e) => {
-			try {
-				const msg: ServerEvent = JSON.parse(e.data);
-				this.handle(msg);
-			} catch {
-				// malformed event — ignore
-			}
+	private async fetchInitialState() {
+		const [roomRes, playersRes] = await Promise.all([
+			supabase.from('rooms').select('*').eq('code', this.roomCode!).single(),
+			supabase.from('room_players').select('*').eq('room_code', this.roomCode!)
+		]);
+
+		if (roomRes.error || !roomRes.data) {
+			this.error = 'Room not found.';
+			return;
+		}
+
+		this.roomRow = roomRes.data as RoomRow;
+		this.playersMap = new Map(
+			(playersRes.data ?? []).map((p) => [p.id, p as PlayerRow])
+		);
+		this.rebuildPublicRoom();
+		this.applyPhaseTransition(null, this.roomRow.phase);
+		this.prevPhase = this.roomRow.phase;
+	}
+
+	private handleRoomChange(newRow: RoomRow) {
+		const prevPhase = this.prevPhase;
+		this.roomRow = newRow;
+		this.rebuildPublicRoom();
+		this.applyPhaseTransition(prevPhase, newRow.phase);
+		this.prevPhase = newRow.phase;
+	}
+
+	private handlePlayerChange(
+		payload: { eventType: string; new: object; old: object }
+	) {
+		if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+			const p = payload.new as PlayerRow;
+			this.playersMap.set(p.id, p);
+		} else if (payload.eventType === 'DELETE') {
+			const p = payload.old as PlayerRow;
+			this.playersMap.delete(p.id);
+		}
+		this.rebuildPublicRoom();
+	}
+
+	private rebuildPublicRoom() {
+		if (!this.roomRow) return;
+
+		const players: PublicPlayer[] = [...this.playersMap.values()].map((p) => ({
+			id: p.id,
+			name: p.name,
+			totalScore: p.scores.reduce(
+				(sum: number, s: number, i: number) => sum + s + (p.speed_bonuses[i] ?? 0),
+				0
+			),
+			roundScores: p.scores.map(
+				(s: number, i: number) => s + (p.speed_bonuses[i] ?? 0)
+			),
+			submittedThisRound: p.submitted_this_round
+		}));
+
+		const challenges = this.roomRow.serialized_challenges as SerializedChallenge[];
+		const phase = this.roomRow.phase as PublicRoom['phase'];
+		const challenge =
+			phase === 'playing' || phase === 'round_end'
+				? (challenges[this.roomRow.current_round] ?? null)
+				: null;
+
+		const roundResults = this.roomRow.round_results?.playerResults ?? [];
+
+		this.room = {
+			code: this.roomRow.code,
+			hostId: this.roomRow.host_player_id,
+			phase,
+			currentRound: this.roomRow.current_round,
+			totalRounds: this.roomRow.total_rounds,
+			players,
+			challenge,
+			roundResults
 		};
 	}
 
-	private handle(msg: ServerEvent) {
-		switch (msg.type) {
-			case 'room_update':
-			case 'game_started':
-			case 'player_submitted':
-			case 'game_over':
-				this.room = msg.room;
-				break;
+	private applyPhaseTransition(prevPhase: string | null, newPhase: string) {
+		if (newPhase === 'playing') {
+			// Clear any leftover round results
+			this.roundResults = null;
+			this.optimalPicks = null;
+			this.stopNextRoundCountdown();
+			// Start local timer
+			if (this.roomRow?.round_start_time) {
+				this.startLocalTimer(this.roomRow.round_start_time, this.roomRow.round_duration);
+			}
+		} else if (newPhase === 'round_end') {
+			this.stopLocalTimer();
+			// Extract results and optimal picks from the DB row
+			if (this.roomRow?.round_results) {
+				this.roundResults = this.roomRow.round_results.playerResults;
+				this.optimalPicks = this.roomRow.round_results.optimalPicks;
+			}
+			// Show 8-second countdown before next round
+			this.startNextRoundCountdown(8);
+		} else if (newPhase === 'finished') {
+			this.stopLocalTimer();
+			this.stopNextRoundCountdown();
+		}
+	}
 
-			case 'new_round':
-				this.room = msg.room;
-				this.roundResults = null;
-				this.optimalPicks = null;
-				this.timeRemaining = 60;
-				this.stopNextRoundCountdown();
-				break;
+	// ─── Local timer (computes timeRemaining from round_start_time) ──────
 
-			case 'round_end':
-				this.room = msg.room;
-				this.roundResults = msg.results;
-				this.optimalPicks = msg.optimalPicks;
-				this.startNextRoundCountdown(8);
-				break;
+	private startLocalTimer(roundStartTime: number, roundDuration: number) {
+		this.stopLocalTimer();
+		this.timerInterval = setInterval(() => {
+			const elapsed = (Date.now() - roundStartTime) / 1000;
+			this.timeRemaining = Math.max(0, Math.round(roundDuration - elapsed));
+		}, 500);
+	}
 
-			case 'timer':
-				this.timeRemaining = msg.remaining;
-				break;
-
-			case 'error':
-				this.error = msg.message;
-				break;
+	private stopLocalTimer() {
+		if (this.timerInterval) {
+			clearInterval(this.timerInterval);
+			this.timerInterval = null;
 		}
 	}
 
@@ -147,7 +294,7 @@ class MultiplayerStore {
 		this.nextRoundIn = null;
 	}
 
-	// ─── actions ───────────────────────────────────────────────────────────
+	// ─── actions ─────────────────────────────────────────────────────────
 
 	async createRoom(playerName: string): Promise<{ roomCode?: string; error?: string }> {
 		const res = await fetch('/api/room', {
@@ -200,7 +347,7 @@ class MultiplayerStore {
 		return res.json();
 	}
 
-	// ─── derived helpers ───────────────────────────────────────────────────
+	// ─── derived helpers ──────────────────────────────────────────────────
 
 	get myPlayer(): PublicPlayer | null {
 		return this.room?.players.find((p) => p.id === this.playerId) ?? null;

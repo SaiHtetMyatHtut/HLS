@@ -2,29 +2,26 @@
 	import { mp } from '$lib/multiplayer.svelte';
 	import { auth } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
-	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { categoryMeta } from '$lib/game-data';
 	import type { Category } from '$lib/game-data';
 
 	const roomCode = page.params.code;
 
-	onMount(() => {
-		if (!auth.isLoggedIn) { goto('/auth'); return; }
+	let roomInitDone = $state(false);
 
-		// If we already have a live connection to this room, do nothing.
+	$effect(() => {
+		if (auth.loading) return; // wait for session to resolve before acting
+		if (!auth.isLoggedIn) { goto('/auth'); return; }
+		if (roomInitDone) return;
+		roomInitDone = true;
+
 		if (mp.roomCode === roomCode && mp.connected) return;
 
-		// Try restoring session (e.g. page refresh)
 		const restored = mp.restoreFromSession();
 		if (!restored || mp.roomCode !== roomCode) {
 			goto('/lobby');
 		}
-	});
-
-	onDestroy(() => {
-		// Keep the SSE alive; user might navigate back.
-		// Full cleanup happens on clearSession() (back-to-lobby).
 	});
 
 	// ── picking state ───────────────────────────────────────────────────────

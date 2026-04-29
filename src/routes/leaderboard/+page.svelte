@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { leaderboard } from '$lib/leaderboard.svelte';
 	import { auth } from '$lib/auth.svelte';
+	import { onMount } from 'svelte';
+
+	onMount(() => leaderboard.load());
 </script>
 
 <svelte:head>

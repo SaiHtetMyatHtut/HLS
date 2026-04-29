@@ -37,10 +37,12 @@
 			return;
 		}
 		loginLoading = true;
-		// mock async delay
-		await new Promise((r) => setTimeout(r, 600));
-		auth.login(loginEmail, loginPassword);
+		const result = await auth.login(loginEmail, loginPassword);
 		loginLoading = false;
+		if (result.error) {
+			loginError = result.error;
+			return;
+		}
 		goto('/game');
 	}
 
@@ -59,9 +61,12 @@
 			return;
 		}
 		regLoading = true;
-		await new Promise((r) => setTimeout(r, 600));
-		auth.register(regName, regEmail, regPassword);
+		const result = await auth.register(regName, regEmail, regPassword);
 		regLoading = false;
+		if (result.error) {
+			regError = result.error;
+			return;
+		}
 		goto('/game');
 	}
 </script>

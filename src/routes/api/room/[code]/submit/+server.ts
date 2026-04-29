@@ -8,7 +8,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 
 	if (!playerId) return json({ error: 'playerId is required.' }, { status: 400 });
 
-	const err = submitPicks(
+	const err = await submitPicks(
 		params.code,
 		String(playerId),
 		Number(roundIndex),

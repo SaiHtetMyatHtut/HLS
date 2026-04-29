@@ -7,6 +7,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	const playerName = String(body.playerName ?? '').trim().slice(0, 30);
 	if (!playerName) return json({ error: 'Player name is required.' }, { status: 400 });
 
-	const result = createRoom(playerName);
+	const result = await createRoom(playerName);
 	return json(result);
 };

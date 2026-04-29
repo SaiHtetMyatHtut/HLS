@@ -7,16 +7,15 @@ import type {
 	PickReveal,
 	PlayerRoundResult
 } from '$lib/room-types';
+import { supabaseAdmin } from '$lib/server/supabase';
 
 export type { PublicRoom, PublicPlayer, SerializedChallenge, PickReveal, PlayerRoundResult };
-
-type Subscriber = (data: string) => void;
 
 interface Player {
 	id: string;
 	name: string;
-	scores: number[]; // health score per round (0-100)
-	speedBonuses: number[]; // speed bonus per round (0-20)
+	scores: number[];
+	speedBonuses: number[];
 	submittedThisRound: boolean;
 }
 
@@ -28,17 +27,21 @@ interface Room {
 	currentRound: number;
 	totalRounds: number;
 	challenges: DishChallenge[];
-	serializedChallenges: SerializedChallenge[]; // pre-shuffled, no healthScore
+	serializedChallenges: SerializedChallenge[];
 	roundStartTime: number;
 	roundDuration: number;
 	submissions: Map<string, { picks: string[]; submittedAt: number }>;
-	subscribers: Set<Subscriber>;
 	roundTimer: ReturnType<typeof setTimeout> | null;
-	timerInterval: ReturnType<typeof setInterval> | null;
 	cleanupTimer: ReturnType<typeof setTimeout> | null;
-	roundResults: PlayerRoundResult[];
+	// Stored for DB sync at round end
+	lastRoundResults: PlayerRoundResult[] | null;
+	lastOptimalPicks: PickReveal[] | null;
 }
 
+// In-memory map is kept solely for timer management.
+// Supabase DB is the source of truth for clients.
+// NOTE: On serverless deployments timers won't survive cold starts — use a
+// dedicated server (adapter-node) or Supabase Edge Functions for production.
 const rooms = new Map<string, Room>();
 
 // ─── utils ────────────────────────────────────────────────────────────────
@@ -80,54 +83,60 @@ function serializeChallenge(c: DishChallenge): SerializedChallenge {
 	};
 }
 
-function toPublicPlayer(p: Player): PublicPlayer {
-	return {
-		id: p.id,
-		name: p.name,
-		totalScore: p.scores.reduce((sum, s, i) => sum + s + (p.speedBonuses[i] ?? 0), 0),
-		roundScores: p.scores.map((s, i) => s + (p.speedBonuses[i] ?? 0)),
-		submittedThisRound: p.submittedThisRound
-	};
-}
+// ─── Supabase sync ────────────────────────────────────────────────────────
+// Writes the current room state to DB, which triggers Realtime to notify clients.
 
-export function toPublicRoom(room: Room): PublicRoom {
-	return {
+async function syncToSupabase(room: Room): Promise<void> {
+	const roundResults =
+		room.lastRoundResults && room.lastOptimalPicks
+			? { playerResults: room.lastRoundResults, optimalPicks: room.lastOptimalPicks }
+			: null;
+
+	const roomUpsert = supabaseAdmin.from('rooms').upsert({
 		code: room.code,
-		hostId: room.hostId,
+		host_player_id: room.hostId,
 		phase: room.phase,
-		currentRound: room.currentRound,
-		totalRounds: room.totalRounds,
-		players: [...room.players.values()].map(toPublicPlayer),
-		challenge:
-			room.phase === 'playing' || room.phase === 'round_end'
-				? (room.serializedChallenges[room.currentRound] ?? null)
-				: null,
-		roundResults: room.roundResults
-	};
-}
+		current_round: room.currentRound,
+		total_rounds: room.totalRounds,
+		serialized_challenges: room.serializedChallenges,
+		round_start_time: room.roundStartTime,
+		round_duration: room.roundDuration,
+		round_results: roundResults
+	});
 
-function broadcast(room: Room, message: object) {
-	const data = `data: ${JSON.stringify(message)}\n\n`;
-	const dead: Subscriber[] = [];
-	for (const sub of room.subscribers) {
-		try {
-			sub(data);
-		} catch {
-			dead.push(sub);
-		}
-	}
-	dead.forEach((s) => room.subscribers.delete(s));
+	const players = [...room.players.values()].map((p) => ({
+		id: p.id,
+		room_code: room.code,
+		name: p.name,
+		scores: p.scores,
+		speed_bonuses: p.speedBonuses,
+		submitted_this_round: p.submittedThisRound
+	}));
+
+	// Run both in parallel; errors are non-fatal (game continues in memory)
+	const [roomResult, playersResult] = await Promise.all([
+		roomUpsert,
+		players.length > 0 ? supabaseAdmin.from('room_players').upsert(players) : null
+	]);
+	if (roomResult.error) console.error('[rooms] DB sync (rooms):', roomResult.error.message);
+	if (playersResult?.error)
+		console.error('[rooms] DB sync (players):', playersResult.error.message);
 }
 
 function scheduleCleanup(room: Room) {
 	if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
-	// Auto-delete rooms after 2 hours of inactivity
-	room.cleanupTimer = setTimeout(() => rooms.delete(room.code), 2 * 60 * 60 * 1000);
+	room.cleanupTimer = setTimeout(async () => {
+		rooms.delete(room.code);
+		// Remove from DB too
+		await supabaseAdmin.from('rooms').delete().eq('code', room.code);
+	}, 2 * 60 * 60 * 1000);
 }
 
 // ─── public API ───────────────────────────────────────────────────────────
 
-export function createRoom(playerName: string): { roomCode: string; playerId: string } {
+export async function createRoom(
+	playerName: string
+): Promise<{ roomCode: string; playerId: string }> {
 	const code = genCode();
 	const playerId = genId();
 	const selectedChallenges = shuffle(allChallenges).slice(0, 5);
@@ -138,13 +147,7 @@ export function createRoom(playerName: string): { roomCode: string; playerId: st
 		players: new Map([
 			[
 				playerId,
-				{
-					id: playerId,
-					name: playerName,
-					scores: [],
-					speedBonuses: [],
-					submittedThisRound: false
-				}
+				{ id: playerId, name: playerName, scores: [], speedBonuses: [], submittedThisRound: false }
 			]
 		]),
 		phase: 'lobby',
@@ -155,22 +158,22 @@ export function createRoom(playerName: string): { roomCode: string; playerId: st
 		roundStartTime: 0,
 		roundDuration: 60,
 		submissions: new Map(),
-		subscribers: new Set(),
 		roundTimer: null,
-		timerInterval: null,
 		cleanupTimer: null,
-		roundResults: []
+		lastRoundResults: null,
+		lastOptimalPicks: null
 	};
 
 	rooms.set(code, room);
+	await syncToSupabase(room);
 	scheduleCleanup(room);
 	return { roomCode: code, playerId };
 }
 
-export function joinRoom(
+export async function joinRoom(
 	code: string,
 	playerName: string
-): { playerId: string } | { error: string } {
+): Promise<{ playerId: string } | { error: string }> {
 	const room = rooms.get(code.toUpperCase().trim());
 	if (!room) return { error: 'Room not found. Check the code and try again.' };
 	if (room.phase !== 'lobby') return { error: 'Game has already started.' };
@@ -185,11 +188,14 @@ export function joinRoom(
 		submittedThisRound: false
 	});
 
-	broadcast(room, { type: 'room_update', room: toPublicRoom(room) });
+	await syncToSupabase(room);
 	return { playerId };
 }
 
-export function startGame(code: string, playerId: string): null | { error: string } {
+export async function startGame(
+	code: string,
+	playerId: string
+): Promise<null | { error: string }> {
 	const room = rooms.get(code);
 	if (!room) return { error: 'Room not found.' };
 	if (room.hostId !== playerId) return { error: 'Only the host can start the game.' };
@@ -198,22 +204,23 @@ export function startGame(code: string, playerId: string): null | { error: strin
 	room.phase = 'playing';
 	room.currentRound = 0;
 	room.submissions.clear();
-	room.roundResults = [];
+	room.lastRoundResults = null;
+	room.lastOptimalPicks = null;
 	for (const p of room.players.values()) p.submittedThisRound = false;
 	room.roundStartTime = Date.now();
 
-	broadcast(room, { type: 'game_started', room: toPublicRoom(room) });
+	await syncToSupabase(room);
 	startRoundTimer(room);
 	scheduleCleanup(room);
 	return null;
 }
 
-export function submitPicks(
+export async function submitPicks(
 	code: string,
 	playerId: string,
 	roundIndex: number,
 	picks: string[]
-): null | { error: string } {
+): Promise<null | { error: string }> {
 	const room = rooms.get(code);
 	if (!room) return { error: 'Room not found.' };
 	if (room.phase !== 'playing') return { error: 'Round is not active.' };
@@ -225,58 +232,41 @@ export function submitPicks(
 
 	const challenge = room.challenges[room.currentRound];
 	const validIds = new Set(challenge.ingredients.map((i) => i.id));
-	const cleanPicks = picks
-		.filter((id) => validIds.has(id))
-		.slice(0, challenge.pickCount);
+	const cleanPicks = picks.filter((id) => validIds.has(id)).slice(0, challenge.pickCount);
 
 	room.submissions.set(playerId, { picks: cleanPicks, submittedAt: Date.now() });
 	player.submittedThisRound = true;
 
-	broadcast(room, { type: 'player_submitted', playerId, room: toPublicRoom(room) });
+	// Sync submission flag so clients see the "submitted" indicator
+	await syncToSupabase(room);
+
+	// Also persist the submission itself
+	await supabaseAdmin.from('room_submissions').upsert({
+		room_code: code,
+		player_id: playerId,
+		round_index: roundIndex,
+		picks: cleanPicks,
+		submitted_at: Date.now()
+	});
 
 	if ([...room.players.values()].every((p) => p.submittedThisRound)) {
 		clearTimeout(room.roundTimer!);
-		clearInterval(room.timerInterval!);
-		endRound(room);
+		await endRound(room);
 	}
 
 	return null;
-}
-
-export function subscribeToRoom(code: string, sub: Subscriber): PublicRoom | null {
-	const room = rooms.get(code);
-	if (!room) return null;
-	room.subscribers.add(sub);
-	return toPublicRoom(room);
-}
-
-export function unsubscribeFromRoom(code: string, sub: Subscriber): void {
-	rooms.get(code)?.subscribers.delete(sub);
 }
 
 // ─── internal ─────────────────────────────────────────────────────────────
 
 function startRoundTimer(room: Room) {
 	if (room.roundTimer) clearTimeout(room.roundTimer);
-	if (room.timerInterval) clearInterval(room.timerInterval);
-
 	room.roundTimer = setTimeout(() => endRound(room), room.roundDuration * 1000);
-
-	room.timerInterval = setInterval(() => {
-		if (room.phase !== 'playing') {
-			clearInterval(room.timerInterval!);
-			return;
-		}
-		const elapsed = (Date.now() - room.roundStartTime) / 1000;
-		const remaining = Math.max(0, Math.round(room.roundDuration - elapsed));
-		broadcast(room, { type: 'timer', remaining });
-	}, 1000);
 }
 
-function endRound(room: Room) {
+async function endRound(room: Room) {
 	if (room.phase !== 'playing') return;
 	if (room.roundTimer) clearTimeout(room.roundTimer);
-	if (room.timerInterval) clearInterval(room.timerInterval);
 
 	const challenge = room.challenges[room.currentRound];
 	const maxScore = [...challenge.ingredients]
@@ -327,8 +317,6 @@ function endRound(room: Room) {
 	}
 
 	results.sort((a, b) => b.roundTotal - a.roundTotal);
-	room.roundResults = results;
-	room.phase = 'round_end';
 
 	const optimalPicks: PickReveal[] = [...challenge.ingredients]
 		.sort((a, b) => b.healthScore - a.healthScore)
@@ -342,28 +330,27 @@ function endRound(room: Room) {
 			category: ing.category
 		}));
 
-	broadcast(room, {
-		type: 'round_end',
-		roundIndex: room.currentRound,
-		results,
-		optimalPicks,
-		room: toPublicRoom(room)
-	});
+	room.phase = 'round_end';
+	room.lastRoundResults = results;
+	room.lastOptimalPicks = optimalPicks;
 
-	// Advance to next round (or end) after 8 seconds
-	setTimeout(() => {
+	// Sync round_end state — Realtime will push to clients
+	await syncToSupabase(room);
+
+	// Advance to next round after 8 seconds
+	setTimeout(async () => {
 		room.currentRound++;
 		if (room.currentRound >= room.totalRounds) {
 			room.phase = 'finished';
-			broadcast(room, { type: 'game_over', room: toPublicRoom(room) });
 		} else {
 			room.phase = 'playing';
 			room.roundStartTime = Date.now();
 			room.submissions.clear();
-			room.roundResults = [];
+			room.lastRoundResults = null;
+			room.lastOptimalPicks = null;
 			for (const p of room.players.values()) p.submittedThisRound = false;
-			broadcast(room, { type: 'new_round', room: toPublicRoom(room) });
 			startRoundTimer(room);
 		}
+		await syncToSupabase(room);
 	}, 8000);
 }

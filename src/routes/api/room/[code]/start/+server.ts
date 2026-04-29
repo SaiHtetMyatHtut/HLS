@@ -7,7 +7,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 	const playerId = String(body.playerId ?? '');
 	if (!playerId) return json({ error: 'playerId is required.' }, { status: 400 });
 
-	const err = startGame(params.code, playerId);
+	const err = await startGame(params.code, playerId);
 	if (err) return json(err, { status: 400 });
 	return json({ ok: true });
 };

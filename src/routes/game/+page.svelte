@@ -15,8 +15,10 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
-	onMount(() => {
-		if (!auth.isLoggedIn) goto('/auth');
+	// Wait for auth to finish loading before deciding to redirect.
+	// A plain onMount check fires before getSession() resolves and wrongly redirects logged-in users.
+	$effect(() => {
+		if (!auth.loading && !auth.isLoggedIn) goto('/auth');
 	});
 
 	type Phase = 'picking' | 'feedback' | 'results';
@@ -28,6 +30,8 @@
 	let roundPoints: number[] = $state([]);
 	let shuffledChallenges: DishChallenge[] = $state([]);
 	let scoreSaved: boolean = $state(false);
+	let scoreSaving: boolean = $state(false);
+	let scoreSaveError: string | null = $state(null);
 
 	const TOTAL_ROUNDS = 5;
 	const MAX_TOTAL = 500; // 5 rounds × 100 pts each
@@ -73,7 +77,7 @@
 		phase = 'feedback';
 	}
 
-	function nextRound(): void {
+	async function nextRound(): Promise<void> {
 		if (challengeIndex + 1 < TOTAL_ROUNDS) {
 			challengeIndex++;
 			selectedIds = [];
@@ -81,8 +85,12 @@
 		} else {
 			phase = 'results';
 			if (auth.user && !scoreSaved) {
-				leaderboard.addEntry(auth.user.name, totalScore);
 				scoreSaved = true;
+				scoreSaving = true;
+				scoreSaveError = null;
+				const result = await leaderboard.addEntry(auth.user.name, totalScore);
+				scoreSaving = false;
+				if (result.error) scoreSaveError = result.error;
 			}
 		}
 	}
@@ -152,6 +160,13 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- score save status -->
+			{#if scoreSaving}
+				<p class="mb-4 text-center text-sm text-gray-400 font-heading">Saving your score…</p>
+			{:else if scoreSaveError}
+				<p class="mb-4 rounded-lg border-[2px] border-red-300 bg-red-50 px-4 py-2 text-center text-sm text-red-600">{scoreSaveError}</p>
+			{/if}
 
 			<!-- leaderboard preview -->
 			<h3 class="mb-4 font-heading text-2xl font-extrabold">🏆 Top 10 Leaderboard</h3>
@@ -322,15 +337,28 @@
 					</div>
 				{/if}
 
-				<div class="mt-5 flex justify-center">
-					<button
-						onclick={nextRound}
-						class="rounded-xl border-[4px] border-black bg-purple px-10 py-3 font-heading font-bold text-white shadow-[4px_4px_0_0_#000] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0_0_#000]"
-					>
-						{challengeIndex + 1 < TOTAL_ROUNDS ? 'Next Round →' : 'See Results →'}
-					</button>
-				</div>
+				<!-- spacer so content isn't hidden behind the sticky bar -->
+				<div class="h-24"></div>
 			{/if}
 		</div>
 	{/if}
 </div>
+
+<!-- Sticky next-round bar — always visible at the bottom during feedback so the user never has to scroll to find it -->
+{#if phase === 'feedback'}
+	<div class="fixed bottom-0 left-0 right-0 z-40 border-t-[3px] border-black bg-white px-4 py-3">
+		<div class="mx-auto flex max-w-5xl items-center justify-between gap-4">
+			<p class="font-heading text-sm font-semibold text-gray-500">
+				Round {challengeIndex + 1}<span class="text-gray-300">/{TOTAL_ROUNDS}</span>
+				&nbsp;·&nbsp;
+				<span class="font-bold text-black">{roundPoints[roundPoints.length - 1]}/100 pts</span>
+			</p>
+			<button
+				onclick={nextRound}
+				class="rounded-xl border-[3px] border-black bg-purple px-8 py-2.5 font-heading font-bold text-white shadow-[3px_3px_0_0_#000] transition-all hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0_0_#000]"
+			>
+				{challengeIndex + 1 < TOTAL_ROUNDS ? 'Next Round →' : 'See Results →'}
+			</button>
+		</div>
+	</div>
+{/if}
