@@ -164,8 +164,8 @@ const EMAILS = [
 	'wai.htet.htwe@gmail.com',
 ];
 
-// First 45 get 2 leaderboard entries, rest get 1
-const TWO_ENTRY_COUNT = 45;
+// First 48 get 2 leaderboard entries, rest get 1
+const TWO_ENTRY_COUNT = 48;
 
 function nameFromEmail(email: string): string {
 	const local = email.split('@')[0];
