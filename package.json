@@ -15,6 +15,7 @@
 		"db:setup": "tsx scripts/db-setup.ts",
 		"db:seed": "tsx scripts/db-seed.ts",
 		"db:seed:users": "tsx scripts/seed-test-users.ts",
+		"db:create-users": "tsx scripts/create-auth-users.ts",
 		"db:reset": "tsx scripts/db-reset.ts",
 		"dashboard": "tsx scripts/dashboard.ts"
 	},
