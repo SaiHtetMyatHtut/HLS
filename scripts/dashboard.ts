@@ -69,13 +69,34 @@ function buildHTML(entries: Entry[]): string {
 		bucketCounts[idx]++;
 	}
 
-	// players with multiple entries
-	const gameCountByPlayer = new Map<string, number>();
+	// players with multiple entries + improvement stats
+	const scoresByPlayer = new Map<string, number[]>();
 	for (const e of entries) {
-		gameCountByPlayer.set(e.name, (gameCountByPlayer.get(e.name) ?? 0) + 1);
+		const arr = scoresByPlayer.get(e.name) ?? [];
+		arr.push(e.score);
+		scoresByPlayer.set(e.name, arr);
 	}
-	const multiPlayers = [...gameCountByPlayer.entries()].filter(([, c]) => c > 1).length;
+	const multiPlayers = [...scoresByPlayer.values()].filter((s) => s.length > 1).length;
 	const singlePlayers = uniquePlayers - multiPlayers;
+
+	// improvement: players whose best score > their first score
+	let improvedCount = 0;
+	let totalImprovement = 0;
+	const improvementList: { name: string; from: number; to: number; gain: number }[] = [];
+	for (const [name, scores] of scoresByPlayer.entries()) {
+		if (scores.length < 2) continue;
+		const first = scores[0];
+		const best = Math.max(...scores.slice(1));
+		if (best > first) {
+			improvedCount++;
+			const gain = best - first;
+			totalImprovement += gain;
+			improvementList.push({ name, from: first, to: best, gain });
+		}
+	}
+	improvementList.sort((a, b) => b.gain - a.gain);
+	const avgImprovement = improvedCount ? Math.round(totalImprovement / improvedCount) : 0;
+	const top5improved = improvementList.slice(0, 5);
 
 	// recent 10 entries
 	const recent = [...entries].reverse().slice(0, 10);
@@ -172,6 +193,16 @@ function buildHTML(entries: Entry[]): string {
     <div class="stat-value red">${maxScore}</div>
     <div class="stat-sub">lowest: ${minScore} pts</div>
   </div>
+  <div class="card">
+    <div class="stat-label">Players Improved</div>
+    <div class="stat-value teal">${improvedCount}</div>
+    <div class="stat-sub">of ${multiPlayers} returning players</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Avg Score Gain</div>
+    <div class="stat-value purple">+${avgImprovement}</div>
+    <div class="stat-sub">pts on second attempt</div>
+  </div>
 </div>
 
 <!-- ── charts row ── -->
@@ -247,6 +278,21 @@ function buildHTML(entries: Entry[]): string {
             <td style="color:#6b7280">${e.played_at}</td>
           </tr>`;
         }).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>📈 Top 5 Most Improved Players</h2>
+    <table>
+      <thead><tr><th>Player</th><th>1st Score</th><th>2nd Score</th><th>Gain</th></tr></thead>
+      <tbody>
+        ${top5improved.map((p) => `<tr>
+          <td><strong>${p.name}</strong></td>
+          <td style="color:#6b7280">${p.from}</td>
+          <td style="color:var(--teal);font-weight:700">${p.to}</td>
+          <td><span class="badge" style="color:var(--teal);border-color:var(--teal)">+${p.gain} pts</span></td>
+        </tr>`).join('')}
       </tbody>
     </table>
   </div>

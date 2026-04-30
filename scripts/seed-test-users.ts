@@ -199,17 +199,19 @@ async function main() {
 		const hasTwoEntries = i < TWO_ENTRY_COUNT;
 
 		// First (or only) entry
+		const firstScore = randomScore(150, 380);
 		rows.push({
 			name,
-			score: randomScore(150, 420),
+			score: firstScore,
 			played_at: randomDate(),
 		});
 
 		if (hasTwoEntries) {
-			// Second entry — generally higher score
+			// Second entry — always higher than the first
+			const secondScore = randomScore(firstScore + 20, Math.min(firstScore + 150, 500));
 			rows.push({
 				name,
-				score: randomScore(200, 490),
+				score: secondScore,
 				played_at: randomDate(),
 			});
 		}
