@@ -96,12 +96,11 @@ function buildHTML(entries: Entry[]): string {
 	}
 	improvementList.sort((a, b) => b.gain - a.gain);
 	const avgImprovement = improvedCount ? Math.round(totalImprovement / improvedCount) : 0;
-	// Top 5 second-timers by their second score
-	const top5secondTime = [...scoresByPlayer.entries()]
+	// All second-time players ranked by second score
+	const allSecondTime = [...scoresByPlayer.entries()]
 		.filter(([, scores]) => scores.length > 1)
 		.map(([name, scores]) => ({ name, firstScore: scores[0], secondScore: Math.max(...scores.slice(1)) }))
-		.sort((a, b) => b.secondScore - a.secondScore)
-		.slice(0, 5);
+		.sort((a, b) => b.secondScore - a.secondScore);
 
 	// recent 10 entries
 	const recent = [...entries].reverse().slice(0, 10);
@@ -287,17 +286,21 @@ function buildHTML(entries: Entry[]): string {
     </table>
   </div>
 
-  <div class="card">
-    <h2>🔁 Top 5 Second-Time Players</h2>
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>🔁 All Second-Time Players (${allSecondTime.length}) — Ranked by 2nd Score</h2>
     <table>
-      <thead><tr><th>#</th><th>Player</th><th>1st</th><th>2nd Score</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>1st Score</th><th>2nd Score</th><th>Gain</th></tr></thead>
       <tbody>
-        ${top5secondTime.map((p, i) => `<tr>
-          <td style="color:#6b7280;font-weight:700">${i + 1}</td>
-          <td><strong>${p.name}</strong></td>
-          <td style="color:#6b7280">${p.firstScore} pts</td>
-          <td><span class="badge" style="color:var(--teal);border-color:var(--teal)">${p.secondScore} pts</span></td>
-        </tr>`).join('')}
+        ${allSecondTime.map((p, i) => {
+          const gain = p.secondScore - p.firstScore;
+          return `<tr>
+            <td style="color:#6b7280;font-weight:700">${i + 1}</td>
+            <td><strong>${p.name}</strong></td>
+            <td style="color:#6b7280">${p.firstScore} pts</td>
+            <td style="color:var(--teal);font-weight:700">${p.secondScore} pts</td>
+            <td><span class="badge" style="color:var(--teal);border-color:var(--teal)">+${gain} pts</span></td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>
   </div>
