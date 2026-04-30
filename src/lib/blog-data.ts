@@ -17,7 +17,7 @@ export const blogPosts: BlogPost[] = [
 		excerpt:
 			'Small changes in your daily food choices can lead to big improvements in energy, mood, and long-term health. Here are five swaps anyone can make today.',
 		category: 'Nutrition Tips',
-		date: 'April 15, 2026',
+		date: 'April 20, 2026',
 		readTime: '4 min read',
 		coverEmoji: '🥗',
 		accentColor: 'bg-teal',
@@ -37,7 +37,7 @@ export const blogPosts: BlogPost[] = [
 		excerpt:
 			'Protein, carbohydrates, and fats are the three pillars of nutrition. Understanding what each does — and how much you need — is the foundation of healthy eating.',
 		category: 'Education',
-		date: 'April 10, 2026',
+		date: 'April 22, 2026',
 		readTime: '6 min read',
 		coverEmoji: '🔬',
 		accentColor: 'bg-purple',
@@ -56,7 +56,7 @@ export const blogPosts: BlogPost[] = [
 		excerpt:
 			'Added sugar hides in places you would never expect — from bread and pasta sauce to salad dressings and flavoured yogurt. Learn to spot it on labels.',
 		category: 'Label Reading',
-		date: 'April 5, 2026',
+		date: 'April 24, 2026',
 		readTime: '5 min read',
 		coverEmoji: '🍭',
 		accentColor: 'bg-yellow',
@@ -75,7 +75,7 @@ export const blogPosts: BlogPost[] = [
 		excerpt:
 			'You do not need to spend your whole Sunday in the kitchen. Smart meal prep is about strategic planning — a few hours of prep prevents a week of bad food decisions.',
 		category: 'Lifestyle',
-		date: 'March 28, 2026',
+		date: 'April 26, 2026',
 		readTime: '5 min read',
 		coverEmoji: '🍱',
 		accentColor: 'bg-teal',
@@ -94,7 +94,7 @@ export const blogPosts: BlogPost[] = [
 		excerpt:
 			'Why do we reach for pizza and ice cream when stressed? The answer is in your brain chemistry — and understanding it is the first step to taking back control.',
 		category: 'Psychology',
-		date: 'March 20, 2026',
+		date: 'April 28, 2026',
 		readTime: '6 min read',
 		coverEmoji: '🧠',
 		accentColor: 'bg-purple',
@@ -113,7 +113,7 @@ export const blogPosts: BlogPost[] = [
 		excerpt:
 			'Dehydration affects your energy, focus, and mood before you ever feel thirsty. Discover how much water you actually need and the best ways to stay hydrated.',
 		category: 'Wellness',
-		date: 'March 12, 2026',
+		date: 'April 30, 2026',
 		readTime: '4 min read',
 		coverEmoji: '💧',
 		accentColor: 'bg-teal',
