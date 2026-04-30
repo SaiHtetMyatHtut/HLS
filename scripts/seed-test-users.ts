@@ -179,9 +179,13 @@ function randomScore(min = 120, max = 490): number {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function randomDate(daysAgo: number): string {
-	const d = new Date();
-	d.setDate(d.getDate() - daysAgo);
+// All dates must be on or after 2026-04-20
+const START_DATE = new Date('2026-04-20');
+
+function randomDate(): string {
+	const today = new Date();
+	const rangeMs = today.getTime() - START_DATE.getTime();
+	const d = new Date(START_DATE.getTime() + Math.random() * rangeMs);
 	return d.toISOString().split('T')[0];
 }
 
@@ -194,19 +198,19 @@ async function main() {
 		const name = nameFromEmail(EMAILS[i]);
 		const hasTwoEntries = i < TWO_ENTRY_COUNT;
 
-		// First (or only) entry — played a while ago
+		// First (or only) entry
 		rows.push({
 			name,
 			score: randomScore(150, 420),
-			played_at: randomDate(Math.floor(Math.random() * 50) + 10),
+			played_at: randomDate(),
 		});
 
 		if (hasTwoEntries) {
-			// Second entry — played more recently, generally higher score
+			// Second entry — generally higher score
 			rows.push({
 				name,
 				score: randomScore(200, 490),
-				played_at: randomDate(Math.floor(Math.random() * 9) + 1),
+				played_at: randomDate(),
 			});
 		}
 	}
