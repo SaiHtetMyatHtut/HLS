@@ -14,7 +14,9 @@
 		"format": "prettier --write .",
 		"db:setup": "tsx scripts/db-setup.ts",
 		"db:seed": "tsx scripts/db-seed.ts",
-		"db:reset": "tsx scripts/db-reset.ts"
+		"db:seed:users": "tsx scripts/seed-test-users.ts",
+		"db:reset": "tsx scripts/db-reset.ts",
+		"dashboard": "tsx scripts/dashboard.ts"
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.49.0",

@@ -24,7 +24,7 @@ class LeaderboardStore {
 			.from('leaderboard')
 			.select('name, score, played_at')
 			.order('score', { ascending: false })
-			.limit(20);
+			.limit(2000);
 
 		if (error) {
 			console.error('[leaderboard] load failed:', error.message);
