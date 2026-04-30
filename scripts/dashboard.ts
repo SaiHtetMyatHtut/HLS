@@ -96,7 +96,12 @@ function buildHTML(entries: Entry[]): string {
 	}
 	improvementList.sort((a, b) => b.gain - a.gain);
 	const avgImprovement = improvedCount ? Math.round(totalImprovement / improvedCount) : 0;
-	const top5improved = improvementList.slice(0, 5);
+	// Top 5 second-timers by their second score
+	const top5secondTime = [...scoresByPlayer.entries()]
+		.filter(([, scores]) => scores.length > 1)
+		.map(([name, scores]) => ({ name, firstScore: scores[0], secondScore: Math.max(...scores.slice(1)) }))
+		.sort((a, b) => b.secondScore - a.secondScore)
+		.slice(0, 5);
 
 	// recent 10 entries
 	const recent = [...entries].reverse().slice(0, 10);
@@ -283,15 +288,15 @@ function buildHTML(entries: Entry[]): string {
   </div>
 
   <div class="card">
-    <h2>📈 Top 5 Most Improved Players</h2>
+    <h2>🔁 Top 5 Second-Time Players</h2>
     <table>
-      <thead><tr><th>Player</th><th>1st Score</th><th>2nd Score</th><th>Gain</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>1st</th><th>2nd Score</th></tr></thead>
       <tbody>
-        ${top5improved.map((p) => `<tr>
+        ${top5secondTime.map((p, i) => `<tr>
+          <td style="color:#6b7280;font-weight:700">${i + 1}</td>
           <td><strong>${p.name}</strong></td>
-          <td style="color:#6b7280">${p.from}</td>
-          <td style="color:var(--teal);font-weight:700">${p.to}</td>
-          <td><span class="badge" style="color:var(--teal);border-color:var(--teal)">+${p.gain} pts</span></td>
+          <td style="color:#6b7280">${p.firstScore} pts</td>
+          <td><span class="badge" style="color:var(--teal);border-color:var(--teal)">${p.secondScore} pts</span></td>
         </tr>`).join('')}
       </tbody>
     </table>
